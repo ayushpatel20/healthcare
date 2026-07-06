@@ -1,0 +1,94 @@
+name: CI/CD FTP Deployment to cPanel
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Verify Deployment Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Run Verification Script
+        run: python .github/scripts/verify_deployment.py
+
+  deploy:
+    name: Deploy to cPanel via FTP
+    runs-on: ubuntu-latest
+    needs: verify
+    steps:
+      - name: Checkout Code (Full History)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # Fetches all history to allow rolling back to previous commits
+
+      - name: Deploy to cPanel (FTP Sync)
+        id: ftp_deploy
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_SERVER_DIR || './' }}
+          # Exclude configuration files, cPanel system directories, and GitHub tracking folders
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.github*
+            **/.github*/**
+            .cpanel/**
+            .well-known/**
+            logs/**
+            tmp/**
+            mail/**
+            ssl/**
+            cgi-bin/**
+            .env
+            .env.*
+            *.zip
+            *.tar
+            *.gz
+            *.rar
+
+      - name: Checkout Last Working Commit on Failure
+        if: failure() && steps.ftp_deploy.outcome == 'failure' && github.event.before != '0000000000000000000000000000000000000000'
+        run: |
+          echo "WARNING: Deployment failed! Initiating rollback to last working commit: ${{ github.event.before }}"
+          git checkout ${{ github.event.before }}
+
+      - name: Deploy Last Working Commit State (Rollback)
+        if: failure() && steps.ftp_deploy.outcome == 'failure' && github.event.before != '0000000000000000000000000000000000000000'
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          server-dir: ${{ secrets.FTP_SERVER_DIR || './' }}
+          exclude: |
+            **/.git*
+            **/.git*/**
+            **/.github*
+            **/.github*/**
+            .cpanel/**
+            .well-known/**
+            logs/**
+            tmp/**
+            mail/**
+            ssl/**
+            cgi-bin/**
+            .env
+            .env.*
+            *.zip
+            *.tar
+            *.gz
+            *.rar
