@@ -1,0 +1,6 @@
+*.zip
+.gemini/
+.ftp-deploy-sync-state.json
+.env
+.env.local
+.env.*.local
